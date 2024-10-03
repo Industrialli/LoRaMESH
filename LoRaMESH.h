@@ -114,7 +114,7 @@ class LoRaMESH{
         }
 
         bool PrepareFrameCommand(uint16_t id, uint8_t command, uint8_t* payload, uint8_t payloadSize){
-            if(id < 0) return false;
+            if((id < 0)) return false;
             if(command < 0) return false;
             if(payload < (uint8_t *)0x00) return false;
             if(payloadSize < 0) return false;
