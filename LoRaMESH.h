@@ -1,5 +1,5 @@
-#ifndef LoRaMESH_h
-#define LoRaMESH_h
+#ifndef INDUSTRIALLI_LORAMESH
+#define INDUSTRIALLI_LORAMESH
 
 #include <Stream.h>
 
@@ -56,7 +56,6 @@
 
 class LoRaMESH{
     public:
-        bool debug_serial = false;
         typedef struct
         {
             uint8_t buffer[MAX_BUFFER_SIZE];
@@ -116,7 +115,7 @@ class LoRaMESH{
         bool PrepareFrameCommand(uint16_t id, uint8_t command, uint8_t* payload, uint8_t payloadSize){
             if((id < 0)) return false;
             if(command < 0) return false;
-            if(payload < (uint8_t *)0x00) return false;
+            if(payload < (uint8_t *)0) return false;
             if(payloadSize < 0) return false;
             
 
@@ -148,54 +147,8 @@ class LoRaMESH{
             return true;
         }
 
-        bool PrepareFrameTransp(uint16_t id, uint8_t* payload, uint8_t payloadSize)
-        {
-            uint8_t i = 0;
-
-            if(payload == NULL) return false;
-            if(id > 1023) return false;
-            if(deviceId == -1) return false;
-            
-            frame.size = payloadSize + 2;
-            frame.buffer[i++] = id&0xFF;
-            frame.buffer[i++] = (id>>8)&0x03;
-            
-            /*
-            if((id != 0) && (deviceId == 0)) 
-            {
-                frame.size = payloadSize + 2;
-                frame.buffer[i++] = id&0xFF;
-                frame.buffer[i++] = (id>>8)&0x03;
-            }
-            else
-            {
-                frame.size = payloadSize;
-            }*/
-            
-            if((payloadSize >= 0) && (payloadSize < MAX_PAYLOAD_SIZE))
-            {
-                /* Loads the payload */
-                memcpy(&frame.buffer[i], payload, payloadSize);
-            }
-            else
-            {
-                /* Invalid payload size */
-                memset(&frame.buffer[0], 0, MAX_BUFFER_SIZE);
-                return false;
-            }
-
-            frame.command = false;
-            return true;
-        }
-
         bool SendPacket(){
             if(frame.size == 0) return false;
-            if(debug_serial)
-            {
-                Serial.print("TX: ");
-                printHex(frame.buffer, frame.size);
-                
-            }
 
             if(frame.command)
                 SerialLoRa->write(frame.buffer, frame.size);
@@ -233,11 +186,6 @@ class LoRaMESH{
                 timeout--;
                 delay(1);
             }
-            
-            if(i > 0){
-                Serial.print("RX: ");
-                printHex(frame.buffer, i);
-            }
 
             if((timeout == 0) && (i == 0)) return false;
             crc = (uint16_t)frame.buffer[i-2] | ((uint16_t)frame.buffer[i-1] << 8);
@@ -249,60 +197,6 @@ class LoRaMESH{
             
             return true;
         }
-
-        bool ReceivePacketTransp(uint16_t* id, uint8_t* payload, uint8_t* payloadSize, uint32_t timeout)
-        {
-            uint16_t waitNextByte = 500;
-            uint8_t i = 0;
-            
-            /* Assert parameters */
-            /*
-            if((id == NULL) && (deviceId == 0)) return false;
-            if(payload == NULL) return false;
-            if(payloadSize == NULL) return false;
-            if(deviceId == -1) return false;
-            */
-            /* Waits for reception */
-            while( ((timeout > 0 ) || (i > 0)) && (waitNextByte > 0) )
-            {
-                if(SerialLoRat->available() > 0)
-                {
-                    frame.buffer[i++] = SerialLoRat->read();
-                    waitNextByte = 500;
-                }
-                
-                if(i > 0)
-                {
-                waitNextByte--;
-                }
-                timeout--;
-                delay(1);
-            }
-
-            /* In case it didn't get any data */
-            if((timeout == 0) && (i == 0)) return false;
-
-            if(deviceId == 0)
-            {
-                /* Copies ID */
-                *id = (uint16_t)frame.buffer[0] | ((uint16_t)frame.buffer[1] << 8);
-                /* Copies payload size */
-                *payloadSize = i-2;
-                /* Copies payload */
-                memcpy(payload, &frame.buffer[3], i-2);
-            }
-            else
-            {
-                /* Copies payload size */
-                *payloadSize = i;
-                /* Copies payload */
-                memcpy(payload, &frame.buffer[0], i);
-            }
-            
-            return true;
-        }
-
-
 
         bool localread(){
             uint8_t b = 0;
@@ -331,8 +225,7 @@ class LoRaMESH{
             return false;
         }
 
-        void begin(bool _debug_serial = false){
-            debug_serial = _debug_serial;
+        void begin(){
             localread();
             localId = (uint16_t)frame.buffer[0] | ((uint16_t)frame.buffer[1] << 8);
         }
@@ -491,115 +384,6 @@ class LoRaMESH{
                 return true;
             
             return false;
-        }    
-
-        bool config_digital_gpio(uint8_t gpio, uint8_t pull, uint8_t inout, uint8_t logical_level){
-            if(gpio < 0x00 || gpio > 0x07)
-                return false;
-            else if(pull < 0x00 || pull > 0x02)
-                return false;
-            else if(inout < 0x00 || inout == 0x02 || inout == 0x03 && gpio < 0x05 && inout == 0x03 && gpio > 0x06 || inout > 0x03)
-                return false;
-            else if(logical_level < 0x00 || logical_level > 0x03)
-                return false;
-            
-            uint8_t b = 0;
-
-            bufferPayload[b] = 0x02;
-            bufferPayload[++b] = gpio;
-            bufferPayload[++b] = pull;
-            bufferPayload[++b] = inout;
-            bufferPayload[++b] = logical_level;
-
-            PrepareFrameCommand(localId, 0xC2, bufferPayload, b + 1);
-            SendPacket();
-            
-            if(ReceivePacketCommand(&localId, &command, bufferPayload, &payloadSize, 1000))
-            {
-                if(command == 0xC2){
-                return true;
-                }
-            }
-
-            return false;
-        }
-
-        bool config_analog_gpio(uint8_t gpio){
-            if(gpio < 0x05 || gpio > 0x06)
-                return false;
-            
-            uint8_t b = 0;
-            bufferPayload[b] = 0x02;
-            bufferPayload[++b] = gpio;
-            bufferPayload[++b] = 0x00;
-            bufferPayload[++b] = LoRa_INOUT_ANALOG_INPUT;
-            bufferPayload[++b] = 0x00;
-
-            PrepareFrameCommand(localId, 0xC2, bufferPayload, b + 1);
-            SendPacket();
-
-            return true;
-        }
-
-        void get_gpio_status(int16_t id, uint8_t gpio){
-            uint8_t b = 0;
-
-            bufferPayload[b] = 0x00;
-            bufferPayload[++b] = gpio;
-            bufferPayload[++b] = 0x00;
-            bufferPayload[++b] = 0x00;
-
-            PrepareFrameCommand(id, 0xC2, bufferPayload, b + 1);
-            SendPacket();
-        }
-
-        double read_gpio(int16_t id, uint8_t gpio, bool analog = false){
-            get_gpio_status(id, gpio);
-            if(ReceivePacketCommand(&localId, &command, bufferPayload, &payloadSize, 1000))
-            {
-                if(command == 0xC2){
-                    if(analog){
-                        uint8_t voltage = (uint16_t)bufferPayload[4] | ((uint16_t)(bufferPayload[3]&0x0F) << 8);
-                        return float(voltage)*8.0586e-4;
-                    }
-                    else
-                        return bufferPayload[4];
-                }
-            }
-            return 0;
-        } 
-
-        bool write_gpio(int16_t id, uint8_t gpio, uint8_t logical_level){
-            if(gpio < 0x00 || gpio > 0x07)
-                return false;
-            else if(logical_level < 0x00 || logical_level > 0x03)
-                return false;
-
-            uint8_t b = 0;
-
-            bufferPayload[b] = 0x01;
-            bufferPayload[++b] = gpio;
-            bufferPayload[++b] = logical_level;
-            bufferPayload[++b] = 0x00;
-
-            PrepareFrameCommand(id, 0xC2, bufferPayload, b + 1);
-            SendPacket();
-            
-            return true;
-        }
-        
-        void printHex(uint8_t* num, uint8_t tam){
-            char hexCar[4];
-            uint8_t index;
-            
-            for(index = 0; index < tam - 1; index++)
-            {
-                sprintf(hexCar, "%02X", num[index]);
-                Serial.print(hexCar);
-            }
-            
-            sprintf(hexCar, "%02X", num[index]);
-            Serial.println(hexCar);  
-        }
+        }  
 };
 #endif
